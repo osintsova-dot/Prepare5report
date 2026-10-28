@@ -321,7 +321,8 @@ function crmPull(){
       if(!i){ notes.push(crmEsc(nm)+' — нет свободной строки'); return; }
       used[i]=1; n++;
       var ni=document.getElementById('p'+i+'_name'); if(!ni.value.trim()) ni.value=nm;
-      document.getElementById('p'+i+'_att').value=Math.max(0,u.L-s.missed.length);
+      var of=s.lessons||u.L; PS[i].of=of; var ai=document.getElementById('p'+i+'_att'); ai.max=of; ai.value=Math.max(0,of-s.missed.length);
+      var al=document.getElementById('p'+i+'_attlab'); if(al) al.textContent='Посещ. / '+of+' (CRM)';
       var ti=document.getElementById('p'+i+'_ts');
       if(s.score!==null) ti.value=s.score;
       var bits=[];
@@ -338,7 +339,7 @@ function crmPull(){
     var tl=j.tests.length?'тест: '+j.tests.map(function(t){return crmEsc(t.cap)+' ('+t.max+')';}).join(' + ')+' = '+j.testMax:'тестов этого блока в CRM пока нет';
     msg.innerHTML='✓ '+crmEsc(u.label)+': уроки '+crmDm(j.from)+'–'+crmDm(j.to)+' ('+j.lessons+' в CRM), '+tl+'. Заполнено учеников: '+n+'.'+
       (notes.length?'<div style="margin-top:6px;color:#6B6280">'+notes.join('<br>')+'</div>':'')+
-      '<div style="margin-top:6px;color:#6B6280">Посещение = '+u.L+' минус пропуски из CRM. «Пропуски» — отработан, если ученик был в группе «'+crmEsc(CRM_CONSULT)+'» в течение 8 дней после пропуска или прошёл «Урок дома» в течение 14 дней. «Приложение» — по неделям с тренировками: 3 из 4 и больше — регулярно, от 40% — иногда, меньше — редко.</div>';
+      '<div style="margin-top:6px;color:#6B6280">Посещение — как в CRM: был / уроков блока в CRM (у пришедших позже — только их уроки). «Пропуски» — отработан, если ученик был в группе «'+crmEsc(CRM_CONSULT)+'» в течение 8 дней после пропуска или прошёл «Урок дома» в течение 14 дней. «Приложение» — по неделям с тренировками: 3 из 4 и больше — регулярно, от 40% — иногда, меньше — редко.</div>';
   }).catch(function(){ btn.disabled=false; btn.textContent='Подтянуть из CRM'; msg.innerHTML='⚠️ Нет связи с сервером. Если включён VPN — выключите и попробуйте ещё раз.'; });
 }
 (function(){ try{ var c=localStorage.getItem('ss_tcode'); if(c) document.addEventListener('DOMContentLoaded',function(){ var i=document.getElementById('crmCode'); if(i&&!i.value) i.value=c; }); }catch(e){} })();
@@ -381,6 +382,7 @@ function selUnitByIdx(i, mode, clickedBtn){
       var lab=document.getElementById('p'+pi+'_attlab');
       if(inp){ inp.max=u.L; inp.placeholder=u.L; if(inp.value!==''&&parseInt(inp.value)>u.L)inp.value=u.L; }
       if(lab){ lab.textContent='Посещ. / '+u.L; }
+      if(PS[pi]) PS[pi].of=0;
     }
   } else {
     S.ui=i;
@@ -421,8 +423,8 @@ function chkOne(){ document.getElementById('gbtn').disabled=!(document.getElemen
 // ════════════════════════════════════════
 function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 
-function buildReport(name,teacher,ui,v,g,a,att,online,hw,app,ts,tt,note){
-  var u=UNITS[ui];
+function buildReport(name,teacher,ui,v,g,a,att,online,hw,app,ts,tt,note,of){
+  var u=UNITS[ui], LL=parseInt(of,10)||u.L; // of — уроков блока в CRM (кнопка «Подтянуть из CRM»), иначе по плану
   var vt={
     1:'лексика блока («'+u.v+'») пока не усвоена — требуется серьёзная дополнительная работа',
     2:'лексика по теме «'+u.v+'» усвоена частично, нужна дополнительная практика',
@@ -454,7 +456,7 @@ function buildReport(name,teacher,ui,v,g,a,att,online,hw,app,ts,tt,note){
   var workL=work.length?'<p>📌 <strong>Над чем работаем:</strong> '+work.map(function(t,i){return i===0?cap(t):t;}).join('; ')+'.</p>':'';
 
   var statLines=[];
-  if(att){ var missed=u.L-parseInt(att); var attStr='Посещаемость: '+att+'/'+u.L+' уроков'; if(missed>0&&online&&online!=='none')attStr+=' — '+OL[online]; else if(parseInt(att)===u.L)attStr+=' — отличная посещаемость!'; statLines.push(attStr); }
+  if(att){ var missed=LL-parseInt(att); var attStr='Посещаемость: '+att+'/'+LL+' уроков'; if(missed>0&&online&&online!=='none')attStr+=' — '+OL[online]; else if(parseInt(att)>=LL)attStr+=' — отличная посещаемость!'; statLines.push(attStr); }
   if(hw) statLines.push('ДЗ выполнено: '+hw+'%');
   if(app) statLines.push('Тренировка слов в приложении: '+APL[app]);
   var statL=statLines.length?'<p>📋 <strong>Статистика:</strong><br>'+statLines.join('<br>')+'</p>':'';
@@ -554,7 +556,7 @@ function genGroup(){
     var hw=document.getElementById('p'+i+'_hw').value;
     var ts=document.getElementById('p'+i+'_ts').value;
     var note=document.getElementById('p'+i+'_note').value.trim();
-    var html=buildReport(name,teacher,GS.ui,v,g,a,att,PS[i].o,hw,PS[i].app,ts,gtt,note);
+    var html=buildReport(name,teacher,GS.ui,v,g,a,att,PS[i].o,hw,PS[i].app,ts,gtt,note,PS[i].of);
     var card=document.createElement('div');
     card.className='card';
     var btnId='gcpbtn'+i;
@@ -626,7 +628,7 @@ function saveGroup(){
     var key=makeKey(currentTeacher,name,GS.ui);
     var data={ name:name,teacher:currentTeacher,unitIdx:GS.ui,
       v:PS[i].v||0,g:PS[i].g||0,a:PS[i].a||0,
-      att:document.getElementById('p'+i+'_att').value, online:PS[i].o,
+      att:document.getElementById('p'+i+'_att').value, attOf:PS[i].of||'', online:PS[i].o,
       hw:document.getElementById('p'+i+'_hw').value, app:PS[i].app,
       ts:document.getElementById('p'+i+'_ts').value, tt:document.getElementById('gTestTotal').value,
       note:document.getElementById('p'+i+'_note').value.trim(), savedAt:new Date().toLocaleDateString('ru') };
@@ -699,7 +701,7 @@ function showUnitData(name,unitIdx){
   var u=UNITS[unitIdx];
   var msg=u.label+' — '+u.t+'\n'+
     'Лексика: '+d.v+'/5  Грамматика: '+d.g+'/5  Активность: '+d.a+'/5\n'+
-    (d.att?'Посещаемость: '+d.att+'/'+u.L+'\n':'')+(d.hw?'ДЗ: '+d.hw+'%\n':'')+
+    (d.att?'Посещаемость: '+d.att+'/'+(d.attOf||u.L)+'\n':'')+(d.hw?'ДЗ: '+d.hw+'%\n':'')+
     (d.ts?'Тест: '+d.ts+(d.tt?'/'+d.tt:'')+'\n':'')+(d.note?'Заметка: '+d.note+'\n':'')+
     'Сохранено: '+d.savedAt;
   alert(msg);
@@ -739,7 +741,7 @@ function showYearReport(name){
     var d=JSON.parse(localStorage.getItem(key)||'null');
     var un=UNITS[u];
     if(d){
-      completedUnits++; totalMax+=un.L;
+      completedUnits++; totalMax+=parseInt(d.attOf,10)||un.L;
       var pct=(d.ts&&d.tt&&parseFloat(d.tt)>0)?Math.round(parseFloat(d.ts)/parseFloat(d.tt)*100):null;
       if(pct!==null)testPcts.push(pct);
       if(d.v)vArr.push(parseInt(d.v));
@@ -753,7 +755,7 @@ function showYearReport(name){
         '<td class="'+scClass(d.v)+'">'+(d.v||'—')+'</td>'+
         '<td class="'+scClass(d.g)+'">'+(d.g||'—')+'</td>'+
         '<td class="'+scClass(d.a)+'">'+(d.a||'—')+'</td>'+
-        '<td>'+(d.att?d.att+'/'+un.L:'—')+'</td>'+
+        '<td>'+(d.att?d.att+'/'+(d.attOf||un.L):'—')+'</td>'+
         '<td>'+(d.hw?d.hw+'%':'—')+'</td>'+
         '<td>'+(pct!==null?pct+'%':(d.ts||'—'))+'</td>'+
       '</tr>';
