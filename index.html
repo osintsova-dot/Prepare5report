@@ -200,6 +200,15 @@ input:focus, textarea:focus, select:focus { border-color: #6C3FC5; }
     </div>
   </div>
 </div>
+<div class="card" id="crmCard">
+  <div class="section-title">Посещение и тест из CRM</div>
+  <div style="font-size:13px;color:#6B6280;line-height:1.45;margin-bottom:10px">Выберите блок выше и нажмите кнопку: имена, посещение, отработки пропусков, тренировки в приложении и баллы теста за блок подтянутся из BigBen. Лексику, грамматику, активность, ДЗ и заметку заполните сами.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <input type="text" id="crmCode" placeholder="Код учителя" autocomplete="off" style="flex:1;min-width:140px">
+    <button type="button" id="crmBtn" class="genbtn" onclick="crmPull()" style="width:auto;flex:none;padding:11px 18px;font-size:14px;margin:0">Подтянуть из CRM</button>
+  </div>
+  <div id="crmMsg" style="font-size:13px;line-height:1.5;margin-top:10px;color:#3B1F78"></div>
+</div>
 <div id="pupilRows"></div>
 <div class="card" style="text-align:center">
   <button class="genbtn" onclick="genGroup()" style="max-width:400px;margin:0 auto 10px">Сгенерировать все отчёты</button>
@@ -252,6 +261,87 @@ var GS = {ui:0};
 var PS = {};
 for (var pi=1; pi<=12; pi++) PS[pi] = {v:0,g:0,a:0,o:'',app:''};
 var currentTeacher = '';
+
+// ════════════════════════════════════════
+// CRM: посещение и тест блока (nihao-bot /reports/submit, crm)
+// ════════════════════════════════════════
+var CRM_GROUP='PREPARE 5', CRM_CONSULT='Консультация Prepare 5', CRM_INTRO_L=3;
+var CRM_URLS=['https://d5d6o4mldv5m1nj5hvih.6brbn2wz.apigw.yandexcloud.net/nihao/reports/submit','https://nihao-bot.o-sintsova.workers.dev/reports/submit'];
+function crmQuery(ui){
+  var u=UNITS[ui]; if(u.n==='In') return {intro:true,introL:CRM_INTRO_L};
+  var n=parseInt(u.n,10); if(!n) return null;
+  return {units:[2*n-1,2*n],prevUnits:n>1?[2*n-3,2*n-2]:[],introL:CRM_INTRO_L};
+}
+function crmPost(body){
+  var i=0;
+  return new Promise(function(res,rej){
+    (function next(){
+      if(i>=CRM_URLS.length) return rej(new Error('net'));
+      var ctl=window.AbortController?new AbortController():null, tm=setTimeout(function(){ if(ctl)ctl.abort(); },40000);
+      fetch(CRM_URLS[i++],{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:ctl?ctl.signal:undefined})
+        .then(function(r){return r.json();}).then(function(j){clearTimeout(tm);res(j);})
+        .catch(function(){clearTimeout(tm);next();});
+    })();
+  });
+}
+function crmName(fio){ var w=String(fio).trim().split(/\s+/); return w.length>1?w.slice(1).join(' ')+' '+w[0]:w[0]; }
+function crmWords(s){ return String(s||'').toLowerCase().replace(/ё/g,'е').split(/\s+/).filter(Boolean); }
+function crmRow(name,used){
+  var want=crmWords(name), empty=0;
+  for(var i=1;i<=12;i++){
+    var v=document.getElementById('p'+i+'_name').value.trim();
+    if(!v){ if(!empty&&!used[i])empty=i; continue; }
+    var have=crmWords(v);
+    if(!used[i]&&want.every(function(w){return have.indexOf(w)>=0;})) return i;
+  }
+  return empty;
+}
+function crmOpt(i,key,val){
+  var bs=document.querySelectorAll('#pupilRows .mob'), pre='mOpt('+i+',\''+key+'\',\''+val+'\'';
+  for(var b=0;b<bs.length;b++) if((bs[b].getAttribute('onclick')||'').indexOf(pre)===0){ mOpt(i,key,val,bs[b]); return; }
+}
+function crmDm(d){ return d?d.slice(8,10)+'.'+d.slice(5,7):''; }
+function crmEsc(s){ return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+function crmPull(){
+  var msg=document.getElementById('crmMsg'), btn=document.getElementById('crmBtn');
+  var u=UNITS[GS.ui], q=crmQuery(GS.ui);
+  if(!q){ msg.innerHTML='Для блока «'+crmEsc(u.label)+'» данных в CRM нет — заполните вручную.'; return; }
+  var code=document.getElementById('crmCode').value.trim();
+  if(!code){ msg.innerHTML='Введите код учителя (тот же, что для отправки отчётов родителям).'; return; }
+  try{ localStorage.setItem('ss_tcode',code); }catch(e){}
+  btn.disabled=true; btn.textContent='Загружаю…'; msg.innerHTML='Смотрю BigBen: '+crmEsc(u.label)+'…';
+  crmPost({code:code,crm:Object.assign({group:CRM_GROUP,consult:CRM_CONSULT,app:true,home:'prep5'},q)}).then(function(j){
+    btn.disabled=false; btn.textContent='Подтянуть из CRM';
+    if(!j||!j.ok){ msg.innerHTML='⚠️ '+crmEsc((j&&j.error)||'Не получилось'); return; }
+    if(!j.lessons){ msg.innerHTML='В CRM пока нет уроков блока «'+crmEsc(u.label)+'».'; return; }
+    if(j.testMax) document.getElementById('gTestTotal').value=j.testMax;
+    var used={}, notes=[], n=0;
+    j.students.forEach(function(s){
+      var nm=crmName(s.fio), i=crmRow(nm,used);
+      if(!i){ notes.push(crmEsc(nm)+' — нет свободной строки'); return; }
+      used[i]=1; n++;
+      var ni=document.getElementById('p'+i+'_name'); if(!ni.value.trim()) ni.value=nm;
+      document.getElementById('p'+i+'_att').value=Math.max(0,u.L-s.missed.length);
+      var ti=document.getElementById('p'+i+'_ts');
+      if(s.score!==null) ti.value=s.score;
+      var bits=[];
+      var made=s.made||[];
+      if(!s.missed.length) crmOpt(i,'o','none'); else crmOpt(i,'o',made.length>=s.missed.length?'all':made.length?'partial':'no');
+      if(s.app) crmOpt(i,'app',s.app.level);
+      if(s.missed.length) bits.push('пропуски '+s.missed.map(function(d){return crmDm(d)+(made.indexOf(d)>=0?' (отработан)':'');}).join(', '));
+      if(s.home&&s.home.length) bits.push('«Урок дома»: '+s.home.map(function(h){return crmDm(h.day)+' '+crmEsc(h.lesson.replace(/^prep5-/,''))+(h.score?' ('+crmEsc(h.score)+')':'');}).join(', '));
+      if(s.app) bits.push(s.app.days?'приложение: '+s.app.days+' дн. тренировок, '+s.app.weeks+' нед. из '+s.app.of:'тренировок в приложении нет');
+      if(j.tests.length&&s.score===null) bits.push('теста нет в CRM');
+      else if(s.testsDone<s.testsAll) bits.push('в CRM '+s.testsDone+' из '+s.testsAll+' тестов');
+      if(bits.length) notes.push('<strong>'+crmEsc(nm)+'</strong> — '+bits.join('; '));
+    });
+    var tl=j.tests.length?'тест: '+j.tests.map(function(t){return crmEsc(t.cap)+' ('+t.max+')';}).join(' + ')+' = '+j.testMax:'тестов этого блока в CRM пока нет';
+    msg.innerHTML='✓ '+crmEsc(u.label)+': уроки '+crmDm(j.from)+'–'+crmDm(j.to)+' ('+j.lessons+' в CRM), '+tl+'. Заполнено учеников: '+n+'.'+
+      (notes.length?'<div style="margin-top:6px;color:#6B6280">'+notes.join('<br>')+'</div>':'')+
+      '<div style="margin-top:6px;color:#6B6280">Посещение = '+u.L+' минус пропуски из CRM. «Пропуски» — отработан, если ученик был в группе «'+crmEsc(CRM_CONSULT)+'» в течение 8 дней после пропуска или прошёл «Урок дома» в течение 14 дней. «Приложение» — по неделям с тренировками: 3 из 4 и больше — регулярно, от 40% — иногда, меньше — редко.</div>';
+  }).catch(function(){ btn.disabled=false; btn.textContent='Подтянуть из CRM'; msg.innerHTML='⚠️ Нет связи с сервером. Если включён VPN — выключите и попробуйте ещё раз.'; });
+}
+(function(){ try{ var c=localStorage.getItem('ss_tcode'); if(c) document.addEventListener('DOMContentLoaded',function(){ var i=document.getElementById('crmCode'); if(i&&!i.value) i.value=c; }); }catch(e){} })();
 
 // ════════════════════════════════════════
 // INIT
